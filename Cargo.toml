@@ -2,6 +2,13 @@
 name = "clock_slide"
 version = "0.1.0"
 edition = "2024"
+description = "Clock slide for the vzglyd display engine — shows a 3D globe and local time"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/vzglyd/vzglyd-clock"
+homepage = "https://github.com/vzglyd/vzglyd"
+keywords = ["vzglyd", "slide", "clock", "wasm", "ambient-display"]
+categories = ["rendering", "embedded", "wasm"]
+rust-version = "1.85"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
