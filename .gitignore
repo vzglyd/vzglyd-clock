@@ -1,0 +1,7 @@
+/target
+**/target
+Cargo.lock
+*.wasm
+*.vzglyd
+clock_slide.json
+manifest.json
