@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Clock slide for the vzglyd display engine — shows a 3D globe and local time"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/vzglyd/vzglyd-clock"
+repository = "https://github.com/vzglyd/VRX-64-clock"
 homepage = "https://github.com/vzglyd/vzglyd"
 keywords = ["vzglyd", "slide", "clock", "wasm", "ambient-display"]
 categories = ["rendering", "embedded", "wasm"]
@@ -14,7 +14,7 @@ rust-version = "1.85"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-vzglyd-slide = { git = "https://github.com/vzglyd/vzglyd-slide" }
+vzglyd_slide = { package = "VRX-64-slide", git = "https://github.com/vzglyd/VRX-64-slide" }
 glam = "0.29"
 serde = { version = "1", features = ["derive"] }
 bytemuck = { version = "1", features = ["derive"] }

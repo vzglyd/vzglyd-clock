@@ -1,4 +1,4 @@
-# vzglyd-clock
+# VRX-64-clock
 
 A clock slide for the [vzglyd](https://github.com/vzglyd/vzglyd) display engine. Displays local time alongside a 3D rotating globe rendered via a custom WGSL shader.
 

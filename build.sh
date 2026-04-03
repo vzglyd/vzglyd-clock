@@ -22,4 +22,4 @@ zip -X -0 -r clock.vzglyd manifest.json slide.wasm assets/
 VZGLYD_SIZE=$(wc -c < clock.vzglyd)
 echo "Done: clock.vzglyd (${VZGLYD_SIZE} bytes)"
 echo "Run with:"
-echo "  cargo run --manifest-path ../vzglyd/Cargo.toml -- --scene ../vzglyd-clock"
+echo "  cargo run --manifest-path ../vzglyd/Cargo.toml -- --scene ../VRX-64-clock"
