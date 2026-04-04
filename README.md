@@ -12,6 +12,20 @@ Build the slide:
 
 This produces `clock.vzglyd` — a packaged slide ready to be placed in your vzglyd slides directory.
 
+## Tracing
+
+This slide now emits top-level guest spans for `vzglyd_configure`, `vzglyd_init`, and
+`vzglyd_update`. Use the normal host workflows to capture them:
+
+```bash
+cargo run --manifest-path /home/rodgerbenham/.openclaw/workspace/VRX-64-native/Cargo.toml -- \
+  --trace \
+  --scene /home/rodgerbenham/.openclaw/workspace/lume-clock/clock.vzglyd
+```
+
+For web profiling, serve the bundle through the canonical `VRX-64-web/web-preview/view.html`
+player and use `Start Trace` / `Stop & Download`.
+
 ## Requirements
 
 - Rust stable with `wasm32-wasip1` target: `rustup target add wasm32-wasip1`

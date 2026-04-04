@@ -6,12 +6,14 @@ use std::f32::consts::TAU;
 use bytemuck::{Pod, Zeroable};
 use glam::{Affine3A, Quat, Vec3};
 use serde::{Deserialize, Serialize};
-use vzglyd_slide::{
-    CameraKeyframe, CameraPath, DrawSource, DrawSpec, FilterMode, Limits, PipelineKind,
-    SceneSpace, ShaderSources, SlideSpec, StaticMesh, TextureDesc, TextureFormat, WrapMode,
-};
 #[cfg(target_arch = "wasm32")]
 use vzglyd_slide::params_buf;
+use vzglyd_slide::{
+    CameraKeyframe, CameraPath, DrawSource, DrawSpec, FilterMode, Limits, PipelineKind, SceneSpace,
+    ShaderSources, SlideSpec, StaticMesh, TextureDesc, TextureFormat, WrapMode,
+};
+#[cfg(target_arch = "wasm32")]
+use vzglyd_slide::{trace_scope, trace_scope_with_attrs};
 
 // Default midnight-blue sky background colour (RGB, no alpha).
 static mut BG_COLOR: [f32; 3] = [0.03, 0.07, 0.14];
@@ -28,7 +30,11 @@ struct ClockParams {
 #[cfg(target_arch = "wasm32")]
 #[unsafe(no_mangle)]
 pub extern "C" fn vzglyd_configure(len: i32) -> i32 {
+    let bytes = len.max(0);
+    let bytes_str = bytes.to_string();
+    let mut trace = trace_scope_with_attrs("vzglyd_configure", &[("bytes", bytes_str.as_str())]);
     if len <= 0 {
+        trace.set_status("ok");
         return 0;
     }
     let bytes = unsafe { &VZGLYD_PARAMS_BUF[..len as usize] };
@@ -42,6 +48,7 @@ pub extern "C" fn vzglyd_configure(len: i32) -> i32 {
             }
         }
     }
+    trace.set_status("ok");
     0
 }
 
@@ -740,9 +747,8 @@ fn sample_clock_pose(elapsed: f32) -> ClockPose {
     let yaw = sample_range(cycle ^ 0x0F13_5ACD, -1.05, 1.05);
     let pitch = sample_range(cycle ^ 0xD31E_33B9, -0.30, 0.30);
     let roll = sample_range(cycle ^ 0xABCD_1021, -0.16, 0.16);
-    let rotation = Quat::from_rotation_y(yaw)
-        * Quat::from_rotation_x(pitch)
-        * Quat::from_rotation_z(roll);
+    let rotation =
+        Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch) * Quat::from_rotation_z(roll);
 
     ClockPose {
         translation: Vec3::new(x, y, z),
@@ -926,12 +932,17 @@ pub extern "C" fn vzglyd_abi_version() -> u32 {
 #[cfg(target_arch = "wasm32")]
 #[unsafe(no_mangle)]
 pub extern "C" fn vzglyd_init() -> i32 {
+    let mut trace = trace_scope("vzglyd_init");
+    trace.set_status("ok");
     0
 }
 
 #[cfg(target_arch = "wasm32")]
 #[unsafe(no_mangle)]
 pub extern "C" fn vzglyd_update(_dt: f32) -> i32 {
+    let dt_ms = format!("{:.3}", _dt * 1000.0);
+    let mut trace = trace_scope_with_attrs("vzglyd_update", &[("dt_ms", dt_ms.as_str())]);
+    trace.set_status("ok");
     0
 }
 
@@ -959,7 +970,8 @@ mod tests {
             let elapsed = cycle as f32 * CLOCK_CYCLE_SECS + CLOCK_CYCLE_SECS * 0.72;
             let pose = sample_clock_pose(elapsed);
             let distance = CAMERA_EYE_Z - pose.translation.z;
-            let minimum = min_visible_distance(pose.translation.x, pose.translation.y, CLOCK_SAFE_RADIUS);
+            let minimum =
+                min_visible_distance(pose.translation.x, pose.translation.y, CLOCK_SAFE_RADIUS);
             assert!(distance >= minimum);
             assert!((pose.rotation.length() - 1.0).abs() < 0.001);
         }
@@ -972,10 +984,27 @@ mod tests {
         let effects = &spec.static_meshes[2];
 
         assert!(body.vertices.len() > effects.vertices.len());
-        assert!(body.vertices.iter().any(|vertex| vertex.mode == MODE_HOUR_HAND));
-        assert!(body.vertices.iter().any(|vertex| vertex.mode == MODE_MINUTE_HAND));
-        assert!(body.vertices.iter().any(|vertex| vertex.mode == MODE_SECOND_HAND));
-        assert!(effects.vertices.iter().all(|vertex| vertex.mode >= MODE_HALO));
+        assert!(
+            body.vertices
+                .iter()
+                .any(|vertex| vertex.mode == MODE_HOUR_HAND)
+        );
+        assert!(
+            body.vertices
+                .iter()
+                .any(|vertex| vertex.mode == MODE_MINUTE_HAND)
+        );
+        assert!(
+            body.vertices
+                .iter()
+                .any(|vertex| vertex.mode == MODE_SECOND_HAND)
+        );
+        assert!(
+            effects
+                .vertices
+                .iter()
+                .all(|vertex| vertex.mode >= MODE_HALO)
+        );
     }
 
     #[test]
