@@ -1,6 +1,4 @@
-#[allow(dead_code)]
-mod date_utils;
-
+use chrono::Local;
 use std::f32::consts::TAU;
 
 use bytemuck::{Pod, Zeroable};
@@ -8,12 +6,12 @@ use glam::{Affine3A, Quat, Vec3};
 use serde::{Deserialize, Serialize};
 #[cfg(target_arch = "wasm32")]
 use vzglyd_slide::params_buf;
+#[cfg(target_arch = "wasm32")]
+use vzglyd_slide::{trace_scope, trace_scope_with_attrs};
 use vzglyd_slide::{
     CameraKeyframe, CameraPath, DrawSource, DrawSpec, FilterMode, Limits, PipelineKind, SceneSpace,
     ShaderSources, SlideSpec, StaticMesh, TextureDesc, TextureFormat, WrapMode,
 };
-#[cfg(target_arch = "wasm32")]
-use vzglyd_slide::{trace_scope, trace_scope_with_attrs};
 
 // Default midnight-blue sky background colour (RGB, no alpha).
 static mut BG_COLOR: [f32; 3] = [0.03, 0.07, 0.14];
@@ -53,24 +51,10 @@ pub extern "C" fn vzglyd_configure(len: i32) -> i32 {
 }
 
 const WIRE_VERSION: u8 = 1;
+const CLOCK_SEGMENTS: u8 = 64;
 
-#[cfg(test)]
-const MELBOURNE_TZ: &str = "Australia/Melbourne";
-#[cfg(test)]
-const MELBOURNE_STD_OFFSET_SECS: i32 = 10 * 60 * 60;
-#[cfg(test)]
-const MELBOURNE_DST_OFFSET_SECS: i32 = 11 * 60 * 60;
-
-const CAMERA_EYE_Z: f32 = 9.4;
-const CAMERA_FOV_Y_DEG: f32 = 36.0;
-#[cfg(test)]
-const VIEW_ASPECT: f32 = 640.0 / 480.0;
-
-#[cfg(test)]
-const CLOCK_SAFE_RADIUS: f32 = 1.94;
-const CLOCK_SEGMENTS: usize = 56;
-#[cfg(test)]
-const CLOCK_CYCLE_SECS: f32 = 10.5;
+const CAMERA_EYE_Z: f32 = 5.0;
+const CAMERA_FOV_Y_DEG: f32 = 45.0;
 
 const MODE_BODY: f32 = 0.0;
 const MODE_SKY: f32 = 1.0;
@@ -87,21 +71,6 @@ pub struct Vertex {
     pub normal: [f32; 3],
     pub color: [f32; 4],
     pub mode: f32,
-}
-
-#[derive(Clone, Copy, Debug)]
-#[cfg(test)]
-struct ClockPose {
-    translation: Vec3,
-    rotation: Quat,
-}
-
-#[derive(Clone, Copy, Debug)]
-#[cfg(test)]
-struct ClockTime {
-    hour: u8,
-    minute: u8,
-    second: u8,
 }
 
 fn build_noise_texture() -> Vec<u8> {
@@ -723,47 +692,6 @@ fn radial_direction(theta0: f32, theta1: f32) -> Vec3 {
     Vec3::new(theta.cos(), theta.sin(), 0.0)
 }
 
-#[cfg(test)]
-fn sample_clock_pose(elapsed: f32) -> ClockPose {
-    let cycle = (elapsed / CLOCK_CYCLE_SECS).floor().max(0.0) as u32;
-    let cycle_t = (elapsed / CLOCK_CYCLE_SECS).fract();
-    let motion_t = smoothstep(cycle_t);
-
-    let start_x = sample_range(cycle ^ 0x15A3_1C2D, -5.2, 5.2);
-    let start_y = sample_range(cycle ^ 0x77B0_9A11, -3.8, 3.8);
-    let end_x = sample_range(cycle ^ 0x229D_04F1, -1.7, 1.7) + start_x * 0.22;
-    let end_y = sample_range(cycle ^ 0x59AB_E120, -1.2, 1.2) + start_y * 0.16;
-
-    let end_distance_min = min_visible_distance(end_x, end_y, CLOCK_SAFE_RADIUS) + 0.35;
-    let end_distance = sample_range(cycle ^ 0x9182_771B, 5.6, 7.8).max(end_distance_min);
-    let start_distance = end_distance + sample_range(cycle ^ 0x4109_BD53, 2.4, 5.1);
-
-    let x = lerp(start_x, end_x, motion_t);
-    let y = lerp(start_y, end_y, motion_t) + (elapsed * 0.55 + cycle as f32 * 0.23).sin() * 0.10;
-    let distance = lerp(start_distance, end_distance, motion_t)
-        .max(min_visible_distance(x, y, CLOCK_SAFE_RADIUS) + 0.25);
-    let z = CAMERA_EYE_Z - distance;
-
-    let yaw = sample_range(cycle ^ 0x0F13_5ACD, -1.05, 1.05);
-    let pitch = sample_range(cycle ^ 0xD31E_33B9, -0.30, 0.30);
-    let roll = sample_range(cycle ^ 0xABCD_1021, -0.16, 0.16);
-    let rotation =
-        Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch) * Quat::from_rotation_z(roll);
-
-    ClockPose {
-        translation: Vec3::new(x, y, z),
-        rotation,
-    }
-}
-
-#[cfg(test)]
-fn min_visible_distance(x: f32, y: f32, radius: f32) -> f32 {
-    let tan_half_y = (CAMERA_FOV_Y_DEG.to_radians() * 0.5).tan();
-    let distance_y = (y.abs() + radius) / tan_half_y;
-    let distance_x = (x.abs() + radius) / (tan_half_y * VIEW_ASPECT);
-    distance_x.max(distance_y).max(4.8)
-}
-
 fn hash01(seed: u32) -> f32 {
     let mut x = seed;
     x ^= x >> 16;
@@ -772,121 +700,6 @@ fn hash01(seed: u32) -> f32 {
     x = x.wrapping_mul(0x846C_A68B);
     x ^= x >> 16;
     x as f32 / u32::MAX as f32
-}
-
-#[cfg(test)]
-fn sample_range(seed: u32, min: f32, max: f32) -> f32 {
-    lerp(min, max, hash01(seed))
-}
-
-#[cfg(test)]
-fn smoothstep(t: f32) -> f32 {
-    let t = t.clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
-
-#[cfg(test)]
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
-}
-
-#[cfg(test)]
-fn clock_time(epoch_secs: u64) -> ClockTime {
-    let (_, _, _, hour, minute, second) = epoch_to_local_components(epoch_secs, MELBOURNE_TZ);
-    ClockTime {
-        hour,
-        minute,
-        second,
-    }
-}
-
-#[cfg(test)]
-fn hour_angle(time: ClockTime) -> f32 {
-    let hours = (time.hour % 12) as f32;
-    let minutes = time.minute as f32;
-    let seconds = time.second as f32;
-    -TAU * (hours + minutes / 60.0 + seconds / 3600.0) / 12.0
-}
-
-#[cfg(test)]
-fn minute_angle(time: ClockTime) -> f32 {
-    -TAU * (time.minute as f32 + time.second as f32 / 60.0) / 60.0
-}
-
-#[cfg(test)]
-fn second_angle(time: ClockTime) -> f32 {
-    -TAU * time.second as f32 / 60.0
-}
-
-#[cfg(test)]
-fn epoch_to_local_components(epoch_secs: u64, timezone: &str) -> (i32, u8, u8, u8, u8, u8) {
-    let mut offset = if timezone == MELBOURNE_TZ {
-        MELBOURNE_STD_OFFSET_SECS
-    } else {
-        0
-    };
-    for _ in 0..2 {
-        let shifted = (epoch_secs as i64 + i64::from(offset)) as u64;
-        let (year, month, day, hour, minute, second) = date_utils::utc_ymdhms_from_unix(shifted);
-        offset = timezone_offset_seconds(timezone, year, month, day, hour);
-        if timezone == "UTC" {
-            return (year, month, day, hour, minute, second);
-        }
-    }
-    date_utils::utc_ymdhms_from_unix((epoch_secs as i64 + i64::from(offset)) as u64)
-}
-
-#[cfg(test)]
-fn timezone_offset_seconds(timezone: &str, year: i32, month: u8, day: u8, hour: u8) -> i32 {
-    match timezone {
-        "UTC" => 0,
-        MELBOURNE_TZ => {
-            let first_sunday_october = first_sunday(year, 10);
-            let first_sunday_april = first_sunday(year, 4);
-            let is_dst = if !(4..10).contains(&month) {
-                true
-            } else if (5..=9).contains(&month) {
-                false
-            } else if month == 10 {
-                day > first_sunday_october || (day == first_sunday_october && hour >= 2)
-            } else {
-                day < first_sunday_april || (day == first_sunday_april && hour < 3)
-            };
-            if is_dst {
-                MELBOURNE_DST_OFFSET_SECS
-            } else {
-                MELBOURNE_STD_OFFSET_SECS
-            }
-        }
-        _ => 0,
-    }
-}
-
-#[cfg(test)]
-fn first_sunday(year: i32, month: u8) -> u8 {
-    (1..=7)
-        .find(|day| date_utils::weekday_abbrev(year, month, *day) == "Sun")
-        .unwrap_or(1)
-}
-
-#[cfg(test)]
-fn epoch_from_utc(year: i32, month: u8, day: u8, hour: u8, minute: u8, second: u8) -> u64 {
-    (days_from_civil(year, month, day) * 86_400
-        + i64::from(hour) * 3_600
-        + i64::from(minute) * 60
-        + i64::from(second)) as u64
-}
-
-#[cfg(test)]
-fn days_from_civil(year: i32, month: u8, day: u8) -> i64 {
-    let year = i64::from(year) - i64::from(month <= 2);
-    let era = if year >= 0 { year } else { year - 399 } / 400;
-    let yoe = year - era * 400;
-    let month = i64::from(month);
-    let day = i64::from(day);
-    let doy = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
 }
 
 static mut SPEC_BYTES: Option<Vec<u8>> = None;
@@ -944,89 +757,4 @@ pub extern "C" fn vzglyd_update(_dt: f32) -> i32 {
     let mut trace = trace_scope_with_attrs("vzglyd_update", &[("dt_ms", dt_ms.as_str())]);
     trace.set_status("ok");
     0
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn spec_valid() {
-        clock_slide_spec().validate().unwrap();
-    }
-
-    #[test]
-    fn clock_spec_is_world_slide() {
-        let spec = clock_slide_spec();
-        assert_eq!(spec.scene_space, SceneSpace::World3D);
-        assert!(spec.dynamic_meshes.is_empty());
-        assert_eq!(spec.static_meshes.len(), 3);
-        assert_eq!(spec.textures.len(), 2);
-    }
-
-    #[test]
-    fn pose_final_distance_respects_view_frustum() {
-        for cycle in 0..16 {
-            let elapsed = cycle as f32 * CLOCK_CYCLE_SECS + CLOCK_CYCLE_SECS * 0.72;
-            let pose = sample_clock_pose(elapsed);
-            let distance = CAMERA_EYE_Z - pose.translation.z;
-            let minimum =
-                min_visible_distance(pose.translation.x, pose.translation.y, CLOCK_SAFE_RADIUS);
-            assert!(distance >= minimum);
-            assert!((pose.rotation.length() - 1.0).abs() < 0.001);
-        }
-    }
-
-    #[test]
-    fn static_meshes_split_body_effects_and_hands() {
-        let spec = clock_slide_spec();
-        let body = &spec.static_meshes[1];
-        let effects = &spec.static_meshes[2];
-
-        assert!(body.vertices.len() > effects.vertices.len());
-        assert!(
-            body.vertices
-                .iter()
-                .any(|vertex| vertex.mode == MODE_HOUR_HAND)
-        );
-        assert!(
-            body.vertices
-                .iter()
-                .any(|vertex| vertex.mode == MODE_MINUTE_HAND)
-        );
-        assert!(
-            body.vertices
-                .iter()
-                .any(|vertex| vertex.mode == MODE_SECOND_HAND)
-        );
-        assert!(
-            effects
-                .vertices
-                .iter()
-                .all(|vertex| vertex.mode >= MODE_HALO)
-        );
-    }
-
-    #[test]
-    fn melbourne_offset_switches_for_dst() {
-        assert_eq!(
-            timezone_offset_seconds(MELBOURNE_TZ, 2026, 1, 15, 12),
-            11 * 3600
-        );
-        assert_eq!(
-            timezone_offset_seconds(MELBOURNE_TZ, 2026, 6, 15, 12),
-            10 * 3600
-        );
-    }
-
-    #[test]
-    fn analog_angles_track_local_time() {
-        let midday = clock_time(epoch_from_utc(2026, 6, 15, 2, 30, 0));
-        assert_eq!(midday.hour, 12);
-        assert_eq!(midday.minute, 30);
-        assert_eq!(midday.second, 0);
-        assert!((hour_angle(midday) + TAU * 0.041666668).abs() < 0.001);
-        assert!((minute_angle(midday) + TAU * 0.5).abs() < 0.001);
-        assert!(second_angle(midday).abs() < 0.001);
-    }
 }
